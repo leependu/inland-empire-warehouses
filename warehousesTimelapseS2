@@ -1,0 +1,151 @@
+/////////////////////////////////////////////////////////////////////////////////
+//                                                                             //
+//  "warehousesTimelapseS2"                                                    //
+//  Inland Empire Warehouse Timelapse — Sentinel-2 sequel                      //
+//  Aaron Goodman (& Claude Sonnet 5)                                          //
+//  2026-07-13                                                                 //
+//                                                                             //
+/////////////////////////////////////////////////////////////////////////////////
+
+// WHAT'S DIFFERENT FROM THE LANDSAT VERSION
+//// Sentinel-2 is the ESA/Copernicus twin-satellite mission (S2A 2015, S2B 2017).
+//// Compared to Landsat, the trade you're making is:
+////   + 10 m pixels in the visible/NIR (vs Landsat's 30 m) — individual
+////     warehouses are crisp blocks instead of smears
+////   + ~5-day revisit (vs 8-16 days) — way more scenes per summer, so
+////     composites are cleaner
+////   - the archive only goes back to 2015 (L2A surface reflectance in GEE
+////     over the US is only reliable from ~2019) — you lose the long 1999+
+////     runway that made the Landsat version's slow-then-fast arc so legible
+//// Verdict: S2 is the "recent explosion in HD" sequel, not a replacement.
+
+// Area of Interest — same as the Landsat version so the two films match
+var aoi = ee.Geometry.Rectangle([-117.55, 33.95, -117.05, 34.20])
+
+// Load Sentinel-2 Surface Reflectance
+//// COPERNICUS/S2_SR_HARMONIZED is the one you want in 2026:
+////   - "SR" = Level-2A surface reflectance (atmospherically corrected,
+////     analogous to Landsat's LC08/C02/T1_L2 — no DN-to-SR math needed,
+////     just divide by 10000)
+////   - "HARMONIZED" = corrects a processing-baseline change ESA made in
+////     Jan 2022 that added a +1000 offset to all DNs; the harmonized
+////     collection shifts post-2022 scenes back so the whole archive is
+////     on one radiometric scale. Always use the HARMONIZED collections.
+//// If you want to push back to 2016-2018, switch to COPERNICUS/S2_HARMONIZED
+//// (Level-1C top-of-atmosphere) — TOA is fine for a visual timelapse, just
+//// slightly hazier and not something you'd train a classifier on.
+var s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+
+// Cloud Score+ — the modern replacement for simpleCloudScore / QA60
+//// This is a Google ML model that scores every S2 pixel 0 (cloudy/shadowed)
+//// to 1 (clear). It ships as its OWN image collection, matched 1:1 to S2
+//// scenes by system:index. linkCollection() joins the score band onto each
+//// S2 image so we can mask with it. This is dramatically better than the
+//// old QA60 bitmask (which missed cirrus and all shadows).
+var csPlus = ee.ImageCollection('GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED')
+var CLEAR_THRESHOLD = 0.60  // cs_cdf >= 0.6 is the commonly recommended cut
+
+var s2Linked = s2.filterBounds(aoi).linkCollection(csPlus, ['cs_cdf'])
+
+// Per-image prep: mask clouds, scale to reflectance, rename to common names
+//// Band map (S2 -> common):  B2 blue, B3 green, B4 red (all 10 m),
+//// B8 NIR (10 m), B11 swir1, B12 swir2 (20 m).
+//// Note the contrast with the Landsat script: there, simpleComposite did
+//// cloud handling implicitly; here we mask explicitly and composite with
+//// median(), which is the standard modern pattern.
+function maskAndPrep(image) {
+  var clear = image.select('cs_cdf').gte(CLEAR_THRESHOLD)
+  return image
+    .select(
+      ['B2', 'B3', 'B4', 'B8', 'B11', 'B12'],
+      ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+    )
+    .divide(10000)          // integer DN -> 0-1 reflectance
+    .updateMask(clear)
+    .copyProperties(image, ['system:time_start'])
+}
+var s2Prepped = s2Linked.map(maskAndPrep)
+
+// Build Annual Composites
+//// Same May-Oct summer window as the Landsat version, one frame per year.
+//// median() after masking = "the typical clear-sky pixel this summer."
+//// With S2's 5-day revisit there are ~30 scenes per summer here, so the
+//// median is rock solid.
+var composites = []
+for (var year = 2019; year <= 2025; year++) {
+  var start = ee.Date.fromYMD(year, 5, 1)
+  var end = ee.Date.fromYMD(year, 10, 1)
+  var composite = s2Prepped.filterDate(start, end).median()
+  composites.push(
+    composite.clip(aoi)
+      .set('year', year)
+      .set('system:index', String(year))
+      .set('system:time_start', start.millis())
+  )
+}
+var timelapseCollection = ee.ImageCollection(composites)
+
+// Visualization
+//// True color, same stretch as the Landsat film so they cut together.
+var rgbVis = {bands: ['red', 'green', 'blue'], min: 0, max: 0.3}
+//// BONUS — try this instead: SWIR false color makes fresh construction
+//// scream. Bare graded dirt is bright orange-pink, finished white rooves
+//// are cyan-white, vegetation is green. Great for a "director's cut."
+var swirVis = {bands: ['swir1', 'nir', 'red'], min: 0, max: 0.45}
+
+Map.addLayer(
+  timelapseCollection.filter(ee.Filter.eq('year', 2019)).first(),
+  rgbVis, '2019'
+)
+Map.addLayer(
+  timelapseCollection.filter(ee.Filter.eq('year', 2025)).first(),
+  rgbVis, '2025'
+)
+Map.addLayer(
+  timelapseCollection.filter(ee.Filter.eq('year', 2025)).first(),
+  swirVis, '2025 SWIR false color', false  // off by default — toggle it on
+)
+Map.setCenter(-117.28, 34.09, 12)
+
+// Animated Thumbnail
+//// Fewer frames than the Landsat version (7 vs 26), so slow it down.
+var thumbnail = ui.Thumbnail({
+  image: timelapseCollection.select(['red', 'green', 'blue']),
+  params: {
+    min: 0,
+    max: 0.3,
+    dimensions: 600,
+    region: aoi,
+    framesPerSecond: 2
+  }
+})
+print('IE Warehouse Expansion in 10 m: 2019-2025')
+print(thumbnail)
+
+// Export Video to Google Drive
+//// At 10 m native resolution this AOI is ~4600 px wide, so a 1920-wide
+//// export actually uses the sensor's detail (the Landsat film maxed out
+//// around 1080 before pixels went soft).
+var rgbCollection = timelapseCollection.map(function(image) {
+  return image.visualize(rgbVis)
+})
+Export.video.toDrive({
+  collection: rgbCollection,
+  description: 'IE_Warehouse_Timelapse_S2_2019_2025',
+  folder: 'GEE_Timelapses',
+  dimensions: 1920,
+  framesPerSecond: 2,
+  region: aoi
+})
+
+// WHERE TO GO NEXT (other non-Landsat data worth a film)
+//// - Sentinel-1 SAR (COPERNICUS/S1_GRD): radar. Buildings produce intense
+////   double-bounce backscatter, so warehouses glow against fields — and
+////   radar sees through clouds. A VV-band timelapse of this AOI is eerie
+////   and very "warehouse-forward."
+//// - VIIRS nighttime lights (NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG, 2012+):
+////   watch the logistics corridor light up at night as 24-hour operations
+////   move in. Coarse (~500 m) but emotionally effective.
+//// - NAIP aerial (USDA/NAIP/DOQQ): 0.6-1 m aerial photos of the US, one
+////   pass every ~2 years. Too sparse for smooth video, but perfect for
+////   before/after stills of a single block.

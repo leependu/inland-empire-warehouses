@@ -1,0 +1,135 @@
+/////////////////////////////////////////////////////////////////////////////////
+//                                                                             //
+//  "warehousesTimelapse"                                                      //
+//  Inland Empire Warehouse Expansion Timelapse                                //
+//  Aaron Goodman (& Claude Sonnet 4.6)                                        //
+//  2026-04-06                                                                 //
+//                                                                             //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Area of Interest
+//// Focused on the IE warehouse corridor: Ontario through Fontana/Rialto
+//// Wider than the zoom-12 view so there's spatial context
+var aoi = ee.Geometry.Rectangle([-117.55, 33.95, -117.05, 34.20])
+
+// Band Harmonization
+//// Landsat 5 (TM) and 7 (ETM+) share the same band numbering.
+//// Landsat 8 (OLI) and 9 (OLI-2) share a different numbering scheme.
+//// These functions rename to common names so composites are interchangeable.
+function renameETM(image) {
+  return image.select(
+    ['B1', 'B2', 'B3', 'B4', 'B5', 'B7'],
+    ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+  )
+}
+function renameOLI(image) {
+  return image.select(
+    ['B2', 'B3', 'B4', 'B5', 'B6', 'B7'],
+    ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+  )
+}
+
+// Build Annual Composites
+//// One composite per year, 1999-2024.
+//// Uses summer months (May-Oct) for consistent sun angle and phenology.
+//// simpleComposite handles cloud removal by selecting the best pixels
+//// from all available scenes — no manual cloud masking needed.
+////
+//// Sensor coverage:
+////   1999-2012: Landsat 5 (TM) + Landsat 7 (ETM+), merged
+////              Merging both sensors gives simpleComposite more scenes
+////              to pick from, which helps fill L7 SLC-off gaps (post-2003).
+////   2013-2024: Landsat 8 (OLI) + Landsat 9 (OLI-2), merged
+////              L9 only contributes scenes from late 2021 onward,
+////              but the merge is harmless for earlier years (just empty).
+var composites = []
+for (var year = 1999; year <= 2024; year++) {
+  var start = ee.Date.fromYMD(year, 5, 1)
+  var end = ee.Date.fromYMD(year, 10, 1)
+  var collection, composite
+
+  if (year <= 2012) {
+    // Don't merge L5 + L7 — simpleComposite uses simpleCloudScore
+    // internally, which expects native band structure (L7 needs both
+    // B6_VCID_1 and B6_VCID_2). Merging sensors breaks it.
+    //   1999-2002: L7 (pre-SLC failure, clean data)
+    //   2003-2011: L5 (avoids L7 SLC-off striping)
+    //   2012:      L7 (L5 decommissioned mid-2011)
+    if (year <= 2002 || year >= 2012) {
+      collection = ee.ImageCollection('LANDSAT/LE07/C02/T1')
+        .filterBounds(aoi).filterDate(start, end)
+    } else {
+      collection = ee.ImageCollection('LANDSAT/LT05/C02/T1')
+        .filterBounds(aoi).filterDate(start, end)
+    }
+    composite = renameETM(ee.Algorithms.Landsat.simpleComposite({
+      collection: collection,
+      asFloat: true
+    }))
+  } else {
+    // Landsat 8 + 9 era
+    var l8 = ee.ImageCollection('LANDSAT/LC08/C02/T1')
+      .filterBounds(aoi).filterDate(start, end)
+    var l9 = ee.ImageCollection('LANDSAT/LC09/C02/T1')
+      .filterBounds(aoi).filterDate(start, end)
+    collection = l8.merge(l9)
+    composite = renameOLI(ee.Algorithms.Landsat.simpleComposite({
+      collection: collection,
+      asFloat: true
+    }))
+  }
+
+  composites.push(
+    composite.clip(aoi)
+      .set('year', year)
+      .set('system:index', String(year))
+      .set('system:time_start', start.millis())
+  )
+}
+
+var timelapseCollection = ee.ImageCollection(composites)
+
+// Visualization
+var rgbVis = {bands: ['red', 'green', 'blue'], min: 0, max: 0.3}
+
+// Map: first and last frames for quick comparison
+Map.addLayer(
+  timelapseCollection.filter(ee.Filter.eq('year', 1999)).first(),
+  rgbVis, '1999'
+)
+Map.addLayer(
+  timelapseCollection.filter(ee.Filter.eq('year', 2024)).first(),
+  rgbVis, '2024'
+)
+Map.setCenter(-117.28, 34.09, 12)
+
+// Animated Thumbnail (displays in the Console panel)
+//// This renders a looping GIF directly in the GEE Code Editor.
+//// It may take a minute to load — the server is compositing 26 years of imagery.
+var thumbnail = ui.Thumbnail({
+  image: timelapseCollection.select(['red', 'green', 'blue']),
+  params: {
+    min: 0,
+    max: 0.3,
+    dimensions: 600,
+    region: aoi,
+    framesPerSecond: 3
+  }
+})
+print('IE Warehouse Expansion: 1999-2024')
+print(thumbnail)
+
+// Export Video to Google Drive
+//// After running, check the Tasks tab (right panel) and click Run.
+//// The video will appear in your Google Drive under GEE_Timelapses/.
+var rgbCollection = timelapseCollection.map(function(image) {
+  return image.visualize(rgbVis)
+})
+Export.video.toDrive({
+  collection: rgbCollection,
+  description: 'IE_Warehouse_Timelapse_1999_2024',
+  folder: 'GEE_Timelapses',
+  dimensions: 1080,
+  framesPerSecond: 3,
+  region: aoi
+})

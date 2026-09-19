@@ -1,0 +1,101 @@
+/////////////////////////////////////////////////////////////////////////////////
+//                                                                             //
+//  "warehouses"                                                               //
+//  `agg_geog415_u1_proj`                                                      //
+//  Geog 415 Unit 1 Project                                                    //
+//  Aaron Goodman                                                              //
+//  2025-04-13                                                                 //
+//                                                                             //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Feature Geometry
+//// Level 1 admin boundaries 
+var gaul = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+//// CA boundary
+var caGeom = ee.Feature(gaul.filter(ee.Filter.eq('ADM1_NAME','California')).first())
+  .geometry()
+  
+// Image Collections
+//// 1999: agg birth year
+//// using raw scenes because T1_L2 will not work with simpleComposite
+var landsat1999 = ee.ImageCollection("LANDSAT/LE07/C02/T1")
+  .filterBounds(caGeom)
+  .filterDate('1999-05-29','1999-12-31')
+var composite1999 = ee.Algorithms.Landsat.simpleComposite({
+  collection:landsat1999,
+  asFloat:true
+})
+var rgbVisL7 = {bands:['B3', 'B2', 'B1'], min:0, max:0.3}
+//// 2020: after significant anthropogenic land change
+//// removal of orange groves; construction of warehousing
+var landsat2019 = ee.ImageCollection("LANDSAT/LC08/C02/T1")
+  .filterBounds(caGeom)
+  .filterDate('2019-05-29','2019-12-31')
+var composite2019 = ee.Algorithms.Landsat.simpleComposite({
+  collection:landsat2019,
+  asFloat:true
+})
+var rgbVisL8 = {bands:['B4', 'B3', 'B2'], min:0, max:0.3}
+
+// Vegetation index
+// MSAVI
+//// MSAVI:1999
+// var addMSAVI1999 = function(image) { 
+  // var msavi1999 = image.expression(
+    // '(1/2)*(2*(NIR+1)-sqrt(((2*NIR+1)^2)-8*(NIR-RED)))', {
+      // 'NIR': image.select('B4'),
+      // 'RED': image.select('B3')
+  // })
+  // .rename('MSAVI1999');
+  // return image
+    // .addBands(msavi1999)
+// }
+//// MSAVI:2019
+// var addMSAVI2019 = function(image) { 
+  // var msavi2019 = image.expression(
+    // '(1/2)*(2*(NIR+1)-sqrt(((2*NIR+1)^2)-8*(NIR-RED)))', {
+      // 'NIR': image.select('B5'),
+      // 'RED': image.select('B4')
+  // })
+  // .rename('MSAVI2019');
+  // return image
+    // .addBands(msavi2019)
+// }
+//// Preparing MSAVI for Map
+// var landsat1999b = landsat1999
+  // .filterDate('1999-05-29','1999-08-31')
+  // .map(addMSAVI1999)
+// var landsat2019b = landsat2019
+  // .filterDate('2019-05-29','2019-08-31')
+  // .map(addMSAVI2019)
+// var msaviParams = {min: -0.5, max: 0.8, palette: ['blue', 'white', 'green']}
+
+// Map
+Map.addLayer(composite1999.clip(caGeom), rgbVisL7, "RGB:1999 (Landsat 7)")
+Map.addLayer(composite2019.clip(caGeom), rgbVisL7, "RGB:2019 (Landsat 8)")
+// Map.addLayer(landsat1999b.select(['MSAVI1999']), msaviParams, "MSAVI:1999")
+// Map.addLayer(landsat2019b.select(['MSAVI2019']), msaviParams, "MSAVI:2019")
+Map.setCenter(-117.28,34.09,12)
+
+// Visualization Suggestion
+///
+//// Move transparency sliders to 0 on all layers except `RGB:1999 (Landsat 7)`
+//// (Do not toggle the layers off; you want them to load)
+//// Raise and lower transparency slider for `RGB:2019 (Landsat 8)` layer to 'animate' urban expansion
+///
+//// Move transparency sliders to 0 on all layers except `MSAVI:2019`
+//// Raise and lower transparency slider for `MSAVI:1999` layer to 'animate' (first in reverse) vegetation reduction
+
+// Observations
+///
+//// The map is now centered on my birthplace: the "Inland Empire", San Bernardino County, California, United States.
+///
+//// When comparing the mosaic from 2019 (captured by Landsat 8) to the mosaic from 1999 (captured by Landsat 7),
+//// the expansion of urban sprawl cannot be ignored. 
+///
+//// Developments of tract homes and later, warehousing, replaced land previously occupied by barren fields or
+//// orange groves. While the removal of orange groves is certainly something that I have taken note of in my
+//// lifetime, it is of a smaller scale than the removal of groves in previous decades. 
+///
+//// I calculated the Modified Soil Adjusted Vegetation Index for the two image composites, which does show a
+//// considerable decline in vegetation in the valley.

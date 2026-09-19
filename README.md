@@ -1,0 +1,7 @@
+# 🌎🚛 inland-empire-warehouses.git
+
+Compiling original and AI-generated Google Earth Engine scripts for analysis and visualization of the warehouse explosion in the Inland Empire, and Southern California generally.
+
+Continuing a thread from a graduate course in the UCLA MAGIST program, GEOG 415: [see `warehouses`](./warehouses), Spring 2025.
+
+Summer 2026 timelapse scripts ([`warehousesTimelapse`](./warehousesTimelapse); [`warehousesTimelapseS2`](./warehousesTimelapseS2)) were generated with Claude Sonnet models steered to follow GEE patterns.
