@@ -5,3 +5,12 @@ Compiling original and AI-generated Google Earth Engine scripts for analysis and
 Continuing a thread from a graduate course in the UCLA MAGIST program, GEOG 415: [see `warehouses`](./warehouses), Spring 2025.
 
 Summer 2026 timelapse scripts ([`warehousesTimelapse`](./warehousesTimelapse); [`warehousesTimelapseS2`](./warehousesTimelapseS2)) were generated with Claude Sonnet models steered to follow GEE patterns.
+
+
+Setting up GitHub mirror: 
+
+```
+git clone https://earthengine.googlesource.com/users/leependu/washington-lulc-ml-landsat
+git remote add github git@github.com:leependu/washington-lulc-ml-landsat.git
+git config remote.github.push refs/heads/master:refs/heads/main
+```
