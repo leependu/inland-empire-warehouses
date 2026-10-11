@@ -6,7 +6,6 @@ Continuing a thread from a graduate course in the UCLA MAGIST program, GEOG 415:
 
 Summer 2026 timelapse scripts ([`warehousesTimelapse`](./warehousesTimelapse); [`warehousesTimelapseS2`](./warehousesTimelapseS2)) were generated with Claude Sonnet models steered to follow GEE patterns.
 
-
 Setting up GitHub mirror: 
 
 ```
