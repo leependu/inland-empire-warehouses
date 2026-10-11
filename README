@@ -10,7 +10,7 @@ Summer 2026 timelapse scripts ([`warehousesTimelapse`](./warehousesTimelapse); [
 Setting up GitHub mirror: 
 
 ```
-git clone https://earthengine.googlesource.com/users/leependu/washington-lulc-ml-landsat
-git remote add github git@github.com:leependu/washington-lulc-ml-landsat.git
+git clone https://earthengine.googlesource.com/users/leependu/inland-empire-warehouses
+git remote add github git@github.com:leependu/inland-empire-warehouses.git
 git config remote.github.push refs/heads/master:refs/heads/main
 ```
